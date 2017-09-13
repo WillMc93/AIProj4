@@ -14,8 +14,7 @@ class ModelSelector(object):
     '''
 
     def __init__(self, all_word_sequences: dict, all_word_Xlengths: dict, this_word: str,
-                 n_constant=3,
-                 min_n_components=2, max_n_components=10,
+                 n_constant=3, min_n_components=2, max_n_components=10,
                  random_state=14, verbose=False):
         self.words = all_word_sequences
         self.hwords = all_word_Xlengths
@@ -76,9 +75,20 @@ class SelectorBIC(ModelSelector):
         """
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-        # TODO implement model selection based on BIC scores
-        raise NotImplementedError
+        # Holder for best score and model
+        besties = float('inf'), None
 
+        for n_components in range(self.min_n_components, self.max_n_components + 1):
+            model = self.base_model(n_components)
+            logL = model.score(self.X, self.lengths)
+            num_feats = self.X.shape[1]
+            num_params = n_components * (n_components - 1) + 2 * num_feats * n_components
+            logN = np.log(self.X.shape[0])
+            bic = -2 * logL + num_params * logN
+            if bic < besties[0]:
+                besties = bic, model
+
+        return besties[1] if besties[1] is not None else self.base_model(self.n_constant)
 
 class SelectorDIC(ModelSelector):
     ''' select best model based on Discriminative Information Criterion
@@ -90,11 +100,50 @@ class SelectorDIC(ModelSelector):
     DIC = log(P(X(i)) - 1/(M-1)SUM(log(P(X(all but i))
     '''
 
+    # Helper Function
+    @classmethod
+    def get_dictionary(cls, instance):
+        models, values = {}, {}
+        for n_components in range(instance.min_n_components, instance.max_n_components + 1):
+            n_components_models, n_components_vals = {}, {}
+
+            for word in instance.words.keys():
+                X, lengths = instance.hwords[word]
+
+                model = GaussianHMM(n_components=n_components, n_iter=1000,
+                                    random_state=instance.random_state).fit(X, lengths)
+                logL = model.score(X, lengths)
+
+                n_components_models[word] = model
+                n_components_vals[word] = logL
+
+            models[n_components] = n_components_models
+            values[n_components] = n_components_vals
+
+        return models, values
+
     def select(self):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-        # TODO implement model selection based on DIC scores
-        raise NotImplementedError
+        # get them models 'n values
+        models, values = self.get_dictionary(self)
+
+        # Holder for best score and model
+        besties = float('inf'), None
+
+        for n_components in range(self.min_n_components, self.max_n_components + 1):
+            models, vals = SelectorDIC.models[n_components], SelectorDIC.values[n_components]
+
+            if(self.this_word not in vals):
+                continue
+
+            mean = np.mean([ml[word] for word in vals.keys() if word != self.this_word])
+            dic = vals[self.this_word] - average
+
+            if dic > besties[0]:
+                besties = dic, models[self.this_word]
+
+        return besties[1] if besties[1] is not None else self.base_model(self.n_constant)
 
 
 class SelectorCV(ModelSelector):
