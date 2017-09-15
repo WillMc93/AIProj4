@@ -79,14 +79,21 @@ class SelectorBIC(ModelSelector):
         besties = float('inf'), None
 
         for n_components in range(self.min_n_components, self.max_n_components + 1):
-            model = self.base_model(n_components)
-            logL = model.score(self.X, self.lengths)
-            num_feats = self.X.shape[1]
-            num_params = n_components * (n_components - 1) + 2 * num_feats * n_components
-            logN = np.log(self.X.shape[0])
-            bic = -2 * logL + num_params * logN
-            if bic < besties[0]:
-                besties = bic, model
+            try:
+                model = self.base_model(n_components)
+                logL = model.score(self.X, self.lengths)
+                num_feats = self.X.shape[1]
+                num_params = n_components * (n_components - 1) + 2 * num_feats * n_components
+                logN = np.log(self.X.shape[0])
+                bic = -2 * logL + num_params * logN
+                if bic < besties[0]:
+                    besties = bic, model
+
+            # Catch errors
+            except Exception as e:
+                #print(e)
+                continue
+
 
         return besties[1] if besties[1] is not None else self.base_model(self.n_constant)
 
@@ -100,36 +107,44 @@ class SelectorDIC(ModelSelector):
     DIC = log(P(X(i)) - 1/(M-1)SUM(log(P(X(all but i))
     '''
 
+    models, values = {}, {}
+
     # Helper Function
     @classmethod
     def get_dictionary(cls, instance):
-        models, values = {}, {}
+        #models, values = {}, {}
         for n_components in range(instance.min_n_components, instance.max_n_components + 1):
             n_components_models, n_components_vals = {}, {}
 
             for word in instance.words.keys():
                 X, lengths = instance.hwords[word]
+                try:
+                    model = GaussianHMM(n_components=n_components, n_iter=1000,
+                                        random_state=instance.random_state).fit(X, lengths)
+                    logL = model.score(X, lengths)
 
-                model = GaussianHMM(n_components=n_components, n_iter=1000,
-                                    random_state=instance.random_state).fit(X, lengths)
-                logL = model.score(X, lengths)
+                    n_components_models[word] = model
+                    n_components_vals[word] = logL
 
-                n_components_models[word] = model
-                n_components_vals[word] = logL
+                # Catch errors
+                except Exception as e:
+                        #print(e)
+                        continue
 
-            models[n_components] = n_components_models
-            values[n_components] = n_components_vals
+            SelectorDIC.models[n_components] = n_components_models
+            SelectorDIC.values[n_components] = n_components_vals
 
-        return models, values
 
     def select(self):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
         # get them models 'n values
-        models, values = self.get_dictionary(self)
+        #self.models, self.values = self.get_dictionary(self)
+        if not len(SelectorDIC.models):
+            self.get_dictionary(self)
 
         # Holder for best score and model
-        besties = float('inf'), None
+        besties = float('-inf'), None
 
         for n_components in range(self.min_n_components, self.max_n_components + 1):
             models, vals = SelectorDIC.models[n_components], SelectorDIC.values[n_components]
@@ -137,8 +152,8 @@ class SelectorDIC(ModelSelector):
             if(self.this_word not in vals):
                 continue
 
-            mean = np.mean([ml[word] for word in vals.keys() if word != self.this_word])
-            dic = vals[self.this_word] - average
+            mean = np.mean([vals[word] for word in vals.keys() if word != self.this_word])
+            dic = vals[self.this_word] - mean
 
             if dic > besties[0]:
                 besties = dic, models[self.this_word]
@@ -151,8 +166,38 @@ class SelectorCV(ModelSelector):
 
     '''
 
+    # Class param
+    n_splits = 5
+
     def select(self):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-        # TODO implement model selection using CV
-        raise NotImplementedError
+        besties = float('-inf'), None
+
+        for n_components in range(self.min_n_components, self.max_n_components + 1):
+            scores = []
+
+            if (len(self.sequences) < SelectorCV.n_splits):
+                break
+
+            split_method = KFold(random_state=self.random_state, n_splits=SelectorCV.n_splits)
+            for train_idx, test_idx in split_method.split(self.sequences):
+                X_train, len_train = combine_sequences(train_idx, self.sequences)
+                X_test, len_test = combine_sequences(test_idx, self.sequences)
+
+                try:
+                    model = GaussianHMM(n_components=n_components, random_state=self.random_state,
+                                        n_iter=1000).fit(X_train, len_train)
+
+                    logL = model.score(X_test, len_test)
+                    scores.append(logL)
+
+                except Exception as e:
+                    break
+
+                mean = np.mean(scores) if len(scores) > 0 else float('-inf')
+
+                if mean > besties[0]:
+                    besties = mean, model
+
+        return besties[1] if besties[1] is not None else self.base_model(self.n_constant)
