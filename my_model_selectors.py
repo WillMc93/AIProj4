@@ -107,58 +107,32 @@ class SelectorDIC(ModelSelector):
     DIC = log(P(X(i)) - 1/(M-1)SUM(log(P(X(all but i))
     '''
 
-    models, values = {}, {}
-
-    # Helper Function
-    @classmethod
-    def get_dictionary(cls, instance):
-        #models, values = {}, {}
-        for n_components in range(instance.min_n_components, instance.max_n_components + 1):
-            n_components_models, n_components_vals = {}, {}
-
-            for word in instance.words.keys():
-                X, lengths = instance.hwords[word]
-                try:
-                    model = GaussianHMM(n_components=n_components, n_iter=1000,
-                                        random_state=instance.random_state).fit(X, lengths)
-                    logL = model.score(X, lengths)
-
-                    n_components_models[word] = model
-                    n_components_vals[word] = logL
-
-                # Catch errors
-                except Exception as e:
-                        #print(e)
-                        continue
-
-            SelectorDIC.models[n_components] = n_components_models
-            SelectorDIC.values[n_components] = n_components_vals
-
-
     def select(self):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-        # get them models 'n values
-        #self.models, self.values = self.get_dictionary(self)
-        if not len(SelectorDIC.models):
-            self.get_dictionary(self)
+        # The "besties" model doesn't seem to work as well for this one, so
+        # we're just going to intialize a list and select the max
+        dic_scores = []
+        try:
+            # Need a list of all P's for SUM(log(P(X(all but i))
+            logP = []
 
-        # Holder for best score and model
-        besties = float('-inf'), None
+            # Generate list
+            for n_component in range(self.min_n_components, self.max_n_components + 1):
+                model = self.base_model(n_component)
+                logP.append(model.score(self.X, self.lengths))
 
-        for n_components in range(self.min_n_components, self.max_n_components + 1):
-            models, vals = SelectorDIC.models[n_components], SelectorDIC.values[n_components]
+            # For each component in list get the DIC score and save it if it is better
+            for p in logP:
+                avg_p = (sum(logP) - p) / (len(n_components) - 1)
+                dic = p - avg_p
+                dic_scores.append(dic)
 
-            if(self.this_word not in vals):
-                continue
+        except Exception as e:
+            pass
 
-            mean = np.mean([vals[word] for word in vals.keys() if word != self.this_word])
-            dic = vals[self.this_word] - mean
-
-            if dic > besties[0]:
-                besties = dic, models[self.this_word]
-
-        return besties[1] if besties[1] is not None else self.base_model(self.n_constant)
+        state = n_components[np.argmax(dic_scores)] if dic_scores else self.n_constant
+        return self.base_model(state)
 
 
 class SelectorCV(ModelSelector):
