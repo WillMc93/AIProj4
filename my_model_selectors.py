@@ -43,7 +43,7 @@ class ModelSelector(object):
         except:
             if self.verbose:
                 print("failure on {} with {} states".format(self.this_word, num_states))
-            return None
+            return None:
 
 
 class SelectorConstant(ModelSelector):
@@ -160,9 +160,7 @@ class SelectorCV(ModelSelector):
                 X_test, len_test = combine_sequences(test_idx, self.sequences)
 
                 try:
-                    model = GaussianHMM(n_components=n_components, random_state=self.random_state,
-                                        n_iter=1000).fit(X_train, len_train)
-
+                    model = self.base_model(n_components)
                     logL = model.score(X_test, len_test)
                     scores.append(logL)
 
