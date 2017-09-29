@@ -110,7 +110,7 @@ class SelectorDIC(ModelSelector):
     def select(self):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-        # The "besties" model doesn't seem to work as well for this one, so
+        # My favoite "besties" model doesn't seem to work as well for this one, so
         # we're just going to intialize a list and select the max
         dic_scores = []
         try:
