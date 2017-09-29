@@ -43,7 +43,7 @@ class ModelSelector(object):
         except:
             if self.verbose:
                 print("failure on {} with {} states".format(self.this_word, num_states))
-            return None:
+            return None
 
 
 class SelectorConstant(ModelSelector):
